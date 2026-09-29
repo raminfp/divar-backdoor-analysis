@@ -1,0 +1,3 @@
+*.apk
+out/
+jadx_out/
